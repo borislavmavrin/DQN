@@ -1,0 +1,6 @@
+matplotlib
+numpy
+six
+tensorflow
+gym
+gym[atari]
