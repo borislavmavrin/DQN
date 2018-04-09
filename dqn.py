@@ -11,9 +11,12 @@ from utils.general import get_logger, Progbar, export_plot
 from utils.replay_buffer import ReplayBuffer
 from utils.preprocess import greyscale
 from utils.wrappers import PreproWrapper, MaxAndSkipEnv
+from utils.test_env import EnvTest
 
 import tensorflow as tf
-import tensorflow.contrib.layers as layers
+
+from configs.q3_nature import config
+
 
 class DQN(object):
     """
@@ -750,7 +753,7 @@ class DQN(object):
         # check of the weight update
         # self.target_q_norm = tf.global_norm(var_lst)
         # var_lst = tf.get_collection(
-            # tf.GraphKeys.TRAINABLE_VARIABLES, scope='q')
+        # tf.GraphKeys.TRAINABLE_VARIABLES, scope='q')
         # self.q_norm = tf.global_norm(var_lst)
         return train_op, grad_norm
         ##############################################################
@@ -861,3 +864,73 @@ class DQN(object):
         Update parametes of Q' with parameters of Q
         """
         self.sess.run(self.update_target_op)
+
+
+def test_nets_and_update(env, config):
+    model = DQN(env, config)
+
+    # inject test data
+    s = tf.ones([1, 80, 80, 4], dtype=tf.float32)
+    sp = tf.ones([1, 80, 80, 4], dtype=tf.float32)
+
+    # create q_test and target_q_test
+    q_test = model.get_q_values_op(s, scope="q_test", reuse=False)
+    target_q_test = model.get_q_values_op(
+        sp, scope="target_q_test", reuse=False)
+
+    # create update_op
+
+    q_test_var_lst = tf.get_collection(
+        tf.GraphKeys.TRAINABLE_VARIABLES,
+        "q_test")
+    target_q_test_var_lst = tf.get_collection(
+        tf.GraphKeys.TRAINABLE_VARIABLES,
+        "target_q_test")
+    update_target_op = model.add_update_target_op("q_test", "target_q_test")
+
+    assert len(q_test_var_lst) == len(target_q_test_var_lst), \
+        "number of variables in q and target_q differ"
+
+    # main logic of the test
+    sess = tf.Session()
+    init = tf.global_variables_initializer()
+    sess.run(init)
+    distance_before_lst = []
+
+    # check difference before the update
+    for idx in range(len(target_q_test_var_lst)):
+        # skip bias, since they are intialized with 0's
+        if 'bias' in q_test_var_lst[idx].name:
+            continue
+        distance_np = (sess.run(tf.norm(
+            q_test_var_lst[idx] -
+            target_q_test_var_lst[idx]
+        )))
+        distance_before_lst.append(distance_np)
+
+    assert np.mean(distance_before_lst) != 0., \
+        'q and taget_q initialized with the same weights'
+
+    # perform update
+    sess.run(update_target_op)
+
+    # check difference after the update
+    distance_after_lst = []
+    for idx in range(len(target_q_test_var_lst)):
+        # skip bias, since they are intialized with 0's
+        if 'bias' in q_test_var_lst[idx].name:
+            continue
+        distance_np = (sess.run(tf.norm(
+            q_test_var_lst[idx] -
+            target_q_test_var_lst[idx]
+        )))
+        distance_after_lst.append(distance_np)
+    assert np.mean(distance_after_lst) == 0., \
+        'q and taget_q weights are different after the update'
+
+    print("network creation and update test passed")
+
+
+if __name__ == '__main__':
+    env = EnvTest((80, 80, 1))
+    test_nets_and_update(env, config)
