@@ -58,13 +58,13 @@ class DQN(object):
         self.target_q = self.get_q_values_op(sp, scope="target_q", reuse=False)
 
         # add update operator for target network
-        self.add_update_target_op("q", "target_q")
+        self.update_target_op = self.add_update_target_op("q", "target_q")
 
         # add square loss
-        self.add_loss_op(self.q, self.target_q)
+        self.loss = self.add_loss_op(self.q, self.target_q)
 
         # add optmizer for the main networks
-        self.add_optimizer_op("q")
+        self.train_op, self.grad_norm = self.add_optimizer_op("q")
 
     @property
     def policy(self):
@@ -189,8 +189,8 @@ class DQN(object):
 
         # interact with environment
         while t < self.config.nsteps_train:
-            target_q_norm = self.sess.run(self.target_q_norm)
-            q_norm = self.sess.run(self.q_norm)
+            # target_q_norm = self.sess.run(self.target_q_norm)
+            # q_norm = self.sess.run(self.q_norm)
 
             # print(' -- target_q norm: ' + str(target_q_norm))
             # print(' -- q norm: ' + str(q_norm))
@@ -609,7 +609,8 @@ class DQN(object):
             update_op_lst.append(op.op)
         update_op_grouped = tf.group(*update_op_lst)
 
-        self.update_target_op = update_op_grouped
+        # self.update_target_op = update_op_grouped
+        return update_op_grouped
 
         ##############################################################
         ######################## END YOUR CODE #######################
@@ -676,8 +677,9 @@ class DQN(object):
         loss_agg = self.r + \
             (1. - self.done_mask) * self.config.gamma * tf.reduce_max(target_q, axis=1) - \
             tf.reduce_sum(tf.multiply(q, a_one_hot), axis=1)
-        self.loss = tf.reduce_mean(loss_agg ** 2)
-
+        loss = tf.reduce_mean(loss_agg ** 2)
+        # self.loss = loss
+        return loss
         ##############################################################
         ######################## END YOUR CODE #######################
 
@@ -729,21 +731,28 @@ class DQN(object):
                 grad, var = grad_and_var
                 grad_clipped = tf.clip_by_norm(grad, self.config.clip_val)
                 grads_clipped_and_vars_lst.append((grad_clipped, var))
-            self.train_op = optimizer.apply_gradients(
+            # self.train_op = optimizer.apply_gradients(
+            #     grads_clipped_and_vars_lst)
+            train_op = optimizer.apply_gradients(
                 grads_clipped_and_vars_lst)
             grads_lst = [x[0] for x in grads_clipped_and_vars_lst]
         else:
-            self.train_op = optimizer.apply_gradients(grads_and_vars_lst)
+            train_op = optimizer.apply_gradients(grads_and_vars_lst)
+            # self.train_op = optimizer.apply_gradients(grads_and_vars_lst)
             grads_lst = [x[0] for x in grads_and_vars_lst]
 
-        # global norm is just a norm of stack vectors
-        self.grad_norm = tf.global_norm(grads_lst)
-        var_lst = tf.get_collection(
-            tf.GraphKeys.TRAINABLE_VARIABLES, scope='target_q')
-        self.target_q_norm = tf.global_norm(var_lst)
-        var_lst = tf.get_collection(
-            tf.GraphKeys.TRAINABLE_VARIABLES, scope='q')
-        self.q_norm = tf.global_norm(var_lst)
+        # global norm is just a norm of stacked vectors
+        # self.grad_norm = tf.global_norm(grads_lst)
+        grad_norm = tf.global_norm(grads_lst)
+        # var_lst = tf.get_collection(
+        #     tf.GraphKeys.TRAINABLE_VARIABLES, scope='target_q')
+        # debugging: compare norms of target_q and q as an indeirect
+        # check of the weight update
+        # self.target_q_norm = tf.global_norm(var_lst)
+        # var_lst = tf.get_collection(
+            # tf.GraphKeys.TRAINABLE_VARIABLES, scope='q')
+        # self.q_norm = tf.global_norm(var_lst)
+        return train_op, grad_norm
         ##############################################################
         ######################## END YOUR CODE #######################
 
