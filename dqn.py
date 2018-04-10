@@ -49,6 +49,13 @@ class DQN(object):
         """
         Build model by adding all necessary variables
         """
+        """
+        TODO: Make parts of the graph more indepenedent and
+              connect them through the inputs and outputs
+              not through creating members of the class.
+              That way testing each part of the graph is much
+              more transparent and clear.
+        """
         # add placeholders
         self.add_placeholders_op()
 
@@ -851,8 +858,12 @@ class DQN(object):
             self.eval_reward_placeholder: self.eval_reward,
         }
 
-        loss_eval, grad_norm_eval, summary, _ = self.sess.run([self.loss, self.grad_norm,
-                                                               self.merged, self.train_op], feed_dict=fd)
+        loss_eval, grad_norm_eval, summary, _ \
+            = self.sess.run(
+                [self.loss, self.grad_norm,
+                 self.merged, self.train_op],
+                feed_dict=fd
+            )
 
         # tensorboard stuff
         self.file_writer.add_summary(summary, t)
@@ -867,6 +878,7 @@ class DQN(object):
 
 
 def test_nets_and_update(env, config):
+    tf.reset_default_graph()
     model = DQN(env, config)
 
     # inject test data
@@ -898,6 +910,8 @@ def test_nets_and_update(env, config):
     distance_before_lst = []
 
     # check difference before the update
+    # NOTE: checking difference by checking the
+    # Euclidean distance
     for idx in range(len(target_q_test_var_lst)):
         # skip bias, since they are intialized with 0's
         if 'bias' in q_test_var_lst[idx].name:
@@ -928,9 +942,68 @@ def test_nets_and_update(env, config):
     assert np.mean(distance_after_lst) == 0., \
         'q and taget_q weights are different after the update'
 
-    print("network creation and update test passed")
+    print(" -- network creation and update test passed")
 
+
+def test_loss(env, config):
+    tf.reset_default_graph()
+    model = DQN(env, config)
+    # adjust number of actions
+    model.env.action_space.n = 3
+
+    # inject test data
+    a_np = np.array([0, 1], dtype=np.int64)
+    q_test_np = np.array([
+        [0.1, 0.2, 0.3],
+        [0.6, 0.5, 0.4]   
+    ], dtype=np.float32)
+    target_q_test_np = np.array([
+        [1.1, 1.2, 1.3],
+        [1.6, 1.5, 1.4]   
+    ], dtype=np.float32)
+    r_np = np.array([1., 10.], dtype=np.float32)
+    done_mask_np = np.array([0., 1.], dtype=np.float32)
+    num_actions = 3
+
+    # tf loss implementation
+    sess = tf.Session()
+    init = tf.global_variables_initializer()
+    sess.run(init)
+    
+    q_test_placeholder = tf.placeholder(
+        tf.float32,
+        shape=[2, 3])
+    q_target_test_placeholder = tf.placeholder(
+        tf.float32,
+        shape=[2, 3])
+
+    loss_tf = model.add_loss_op(
+        q_test_placeholder,
+        q_target_test_placeholder)
+
+    loss_np = sess.run(
+        loss_tf,
+        feed_dict={
+            q_test_placeholder: q_test_np,
+            q_target_test_placeholder: target_q_test_np,
+            model.a: a_np,
+            model.r: r_np ,
+            model.done_mask: done_mask_np
+        }
+    )
+
+    # np loss implementation
+    loss_agg = r_np + (1. - done_mask_np) * \
+        model.config.gamma * target_q_test_np.max(axis=1)
+    loss_agg -= q_test_np[[0, 1], a_np]
+    loss_correct_np = np.mean(loss_agg ** 2)
+
+    assert np.sum((loss_np - loss_correct_np) ** 2) < 1e-08, \
+        'loss is incorrect'
+
+    print(" -- loss test passed")
 
 if __name__ == '__main__':
     env = EnvTest((80, 80, 1))
     test_nets_and_update(env, config)
+    test_loss(env, config)
