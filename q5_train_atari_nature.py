@@ -3,7 +3,7 @@ from utils.preprocess import greyscale
 from utils.wrappers import PreproWrapper, MaxAndSkipEnv
 
 from q1_schedule import LinearExploration, LinearSchedule
-from q3_nature import NatureQN
+from dqn import DQN
 
 from configs.q5_train_atari_nature import config
 
@@ -39,5 +39,5 @@ if __name__ == '__main__':
                                  config.lr_nsteps)
 
     # train model
-    model = NatureQN(env, config)
+    model = DQN(env, config)
     model.run(exp_schedule, lr_schedule)

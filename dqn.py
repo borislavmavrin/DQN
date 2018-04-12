@@ -1,10 +1,7 @@
 import os
 import gym
 import numpy as np
-import logging
-import time
 import sys
-from gym import wrappers
 from collections import deque
 
 from utils.general import get_logger, Progbar, export_plot
@@ -940,7 +937,7 @@ def test_nets_and_update(env, config):
         )))
         distance_after_lst.append(distance_np)
     assert np.mean(distance_after_lst) == 0., \
-        'q and taget_q weights are different after the update'
+        'network creation and update test failed'
 
     print(" -- network creation and update test passed")
 
@@ -955,11 +952,11 @@ def test_loss(env, config):
     a_np = np.array([0, 1], dtype=np.int64)
     q_test_np = np.array([
         [0.1, 0.2, 0.3],
-        [0.6, 0.5, 0.4]   
+        [0.6, 0.5, 0.4]
     ], dtype=np.float32)
     target_q_test_np = np.array([
         [1.1, 1.2, 1.3],
-        [1.6, 1.5, 1.4]   
+        [1.6, 1.5, 1.4]
     ], dtype=np.float32)
     r_np = np.array([1., 10.], dtype=np.float32)
     done_mask_np = np.array([0., 1.], dtype=np.float32)
@@ -969,7 +966,7 @@ def test_loss(env, config):
     sess = tf.Session()
     init = tf.global_variables_initializer()
     sess.run(init)
-    
+
     q_test_placeholder = tf.placeholder(
         tf.float32,
         shape=[2, 3])
@@ -987,7 +984,7 @@ def test_loss(env, config):
             q_test_placeholder: q_test_np,
             q_target_test_placeholder: target_q_test_np,
             model.a: a_np,
-            model.r: r_np ,
+            model.r: r_np,
             model.done_mask: done_mask_np
         }
     )
@@ -999,7 +996,7 @@ def test_loss(env, config):
     loss_correct_np = np.mean(loss_agg ** 2)
 
     assert np.sum((loss_np - loss_correct_np) ** 2) < 1e-08, \
-        'loss is incorrect'
+        'loss test failed'
 
     print(" -- loss test passed")
 
