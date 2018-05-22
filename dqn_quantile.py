@@ -11,6 +11,7 @@ from utils.wrappers import PreproWrapper, MaxAndSkipEnv
 from utils.test_env import EnvTest
 
 import tensorflow as tf
+from tensorflow.python import debug as tf_debug
 
 from configs.q3_nature import config
 
@@ -96,7 +97,7 @@ class DQNquantie(object):
         """
         # create tf session
         self.sess = tf.Session()
-
+        # self.sess = tf_debug.TensorBoardDebugWrapperSession(self.sess, 'localhost:6064')
         # tensorboard stuff
         self.add_summary()
 
@@ -261,6 +262,7 @@ class DQNquantie(object):
                                                       rewards)), ("eps", exp_schedule.epsilon),
                                                   ("Grads", grad_eval), ("Max Q",
                                                                          self.max_q),
+
                                                   ("lr", lr_schedule.epsilon)])
 
                 elif (t < self.config.learning_start) and (t % self.config.log_freq == 0):
@@ -303,6 +305,8 @@ class DQNquantie(object):
             lr: (float) learning rate
         """
         loss_eval, grad_eval = 0, 0
+        q_net_norm, target_q_net_norm = 0, 0
+        m_norm = 0
 
         # perform training step
         if (t > self.config.learning_start and t % self.config.learning_freq == 0):
@@ -517,24 +521,30 @@ class DQNquantie(object):
                 512,
                 activation_fn=tf.nn.relu
             )
-            # layer5 = tf.contrib.layers.fully_connected(
-            #     layer4,
-            #     num_actions,
-            #     activation_fn=None
-            # )
 
-            W = tf.get_variable(
-                'W', [512, num_actions, number_of_atoms],
-                initializer=tf.contrib.layers.xavier_initializer()
+            layer5 = tf.contrib.layers.fully_connected(
+                layer4,
+                num_actions * number_of_atoms,
+                activation_fn=None
             )
 
-            layer5 = tf.tensordot(layer4, W, [[1], [0]])
-            out = tf.nn.softmax(layer5, axis=2)
+            # W = tf.get_variable(
+            #     'W', [512, num_actions, number_of_atoms],
+            #     initializer=tf.contrib.layers.xavier_initializer()
+            # )
+            #
+            # b = tf.get_variable(
+            #     'b', [num_actions, number_of_atoms],
+            #     initializer=tf.constant_initializer(0.))
+
+            # layer6 = tf.tensordot(layer5, W, [[1], [0]]) + b
+
+            layer6 = tf.reshape(layer5, [-1, num_actions, number_of_atoms])
+            out = tf.nn.softmax(layer6, axis=2)
 
         ##############################################################
         ######################## END YOUR CODE #######################
         return out
-        ######################## END YOUR CODE #######################
 
     def add_update_target_op(self, q_scope, target_q_scope):
         """
@@ -633,8 +643,8 @@ class DQNquantie(object):
 
         # update and project support
         z_update = tf.reshape(self.r,  (-1, 1)) + self.config.gamma * (1. - tf.reshape(self.done_mask, (-1, 1))) * z
-        z_update_clipped = tf.clip_by_value(z_update, Vmin + 1e-7, Vmax + 1e-7)
-        b = (z_update_clipped - Vmin - 1e-7) / delta_z
+        z_update_clipped = tf.clip_by_value(z_update, Vmin, Vmax)
+        b = (z_update_clipped - Vmin) / delta_z
         u = tf.ceil(b)
         l = tf.floor(b)
 
@@ -646,7 +656,7 @@ class DQNquantie(object):
         target_p = tf.gather_nd(target_q, a_next_idx)
 
         # distribute probability masses
-        l_p = (u - b) * target_p
+        l_p = (u - b + tf.cast(tf.equal(l, u), tf.float32)) * target_p
         u_p = (b - l) * target_p
 
         with tf.variable_scope('projection', reuse=False):
@@ -667,7 +677,12 @@ class DQNquantie(object):
                            )
             projection_op_lst.append(op.op)
 
-        m_prob = tf.nn.softmax(m, axis=1)
+        m_prob = m
+        # It was a big mistake to apply softmax here, since the projection step
+        # does not change the total probability mass, but redistributes it.
+        # Softmax on the other hand smoothes the distribution and thus the loss of
+        # learnt information.
+        # m_prob = tf.nn.softmax(m, axis=1)
 
         # compute loss
         a_idx = tf.stack([tf.range(batch_size), tf.cast(self.a, tf.int32)], axis=1)
@@ -855,10 +870,24 @@ class DQNquantie(object):
                 feed_dict=fd
             )
 
+        # q_var_lst = tf.get_collection(
+        #     tf.GraphKeys.TRAINABLE_VARIABLES, scope='q')
+        # target_q_var_lst = tf.get_collection(
+        #     tf.GraphKeys.TRAINABLE_VARIABLES, scope='target_q')
+        # m_var_lst = tf.get_collection(
+        #     tf.GraphKeys.GLOBAL_VARIABLES, scope='projection')
+        #
+        # q_net_norm, target_q_norm, m_norm \
+        #     = self.sess.run([
+        #     tf.global_norm(q_var_lst),
+        #     tf.global_norm(target_q_var_lst),
+        #     tf.global_norm(m_var_lst)
+        # ])
+
         # tensorboard stuff
         self.file_writer.add_summary(summary, t)
 
-        return loss_eval, grad_norm_eval
+        return loss_eval, grad_norm_eval #, q_net_norm, target_q_norm, m_norm
 
     def update_target_params(self):
         """

@@ -2,3 +2,5 @@
 .DS_Store
 .env/
 results/
+.ipynb_checkpoints/
+
