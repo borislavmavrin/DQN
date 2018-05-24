@@ -95,7 +95,9 @@ class DQN(object):
         Creates a tf Session and run initializer of variables
         """
         # create tf session
-        self.sess = tf.Session()
+        config_tf = tf.ConfigProto()
+        config_tf.gpu_options.allow_growth = True
+        self.sess = tf.Session(config=config_tf)
 
         # tensorboard stuff
         self.add_summary()
