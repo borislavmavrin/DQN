@@ -8,7 +8,6 @@ from utils.general import get_logger, Progbar, export_plot
 from utils.replay_buffer import ReplayBuffer
 from utils.preprocess import greyscale
 from utils.wrappers import PreproWrapper, MaxAndSkipEnv
-from utils.test_env import EnvTest
 
 import tensorflow as tf
 
@@ -680,10 +679,10 @@ class DQN(object):
         # a_idx = tf.stack([rows, tf.cast(self.a, dtype=tf.int32)], axis=1)
         # ones = tf.ones([batch_size])
 
-        # loss_agg = (self.r + self.config.gamma * tf.reduce_max(target_q, axis=1) \
+        # loss_agg = (tf.sign(self.r) + self.config.gamma * tf.reduce_max(target_q, axis=1) \
         #           - (ones - self.done_mask) * tf.gather_nd(q, a_idx)) ** 2
         a_one_hot = tf.one_hot(self.a, depth=num_actions)
-        loss_agg = self.r + \
+        loss_agg = tf.sign(self.r) + \
             (1. - self.done_mask) * self.config.gamma * tf.reduce_max(target_q, axis=1) - \
             tf.reduce_sum(tf.multiply(q, a_one_hot), axis=1)
         loss = tf.reduce_mean(loss_agg ** 2)
